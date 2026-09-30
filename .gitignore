@@ -1,0 +1,19 @@
+# Source corpus and derived text splits
+/data/*.zip
+/data/*.txt
+/real_results/
+/results_1-4/data/
+
+# Large generated ARPA models and obsolete composite chart
+/results_1-4/models/
+/results_1-4/perplexity_and_size.png
+
+# Local KenLM source/build and temporary files
+/tools/kenlm-build/
+/tools/kenlm-src/
+/tools/kenlm-ex-*.tar.gz
+/tools/tmp/
+
+# Python cache
+__pycache__/
+*.py[cod]
