@@ -2,11 +2,8 @@
 /data/*.zip
 /data/*.txt
 /real_results/
-/results_1-4/data/
-
-# Large generated ARPA models and obsolete composite chart
-/results_1-4/models/
-/results_1-4/perplexity_and_size.png
+# Large generated ARPA models; hashes are archived in experiment metadata
+/results_1-6/models/
 
 # Local KenLM source/build and temporary files
 /tools/kenlm-build/

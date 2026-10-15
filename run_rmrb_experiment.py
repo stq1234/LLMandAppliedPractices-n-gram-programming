@@ -19,13 +19,16 @@ import zipfile
 from collections import Counter, OrderedDict
 from pathlib import Path
 from typing import Iterable
+import psutil
 
 
 TAG_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-RECORD_RE = re.compile(r"^(\d{8})-(\d+)-(\d+)-(\d+)/([A-Za-z][A-Za-z0-9_-]*)$")
+RECORD_RE = re.compile(r"^(\d{8})-(\d+)-(\d+)-(\d+)(?:/[A-Za-z][A-Za-z0-9_-]*)?$")
 CHUNK_RE = re.compile(r"\]([A-Za-z][A-Za-z0-9_-]*)$")
 POS_RE = re.compile(r"^(.*)/([A-Za-z][A-Za-z0-9_-]*)$")
 MONTH_FILE_RE = re.compile(r"(?:^|/)1998(\d{2})\.txt$", re.IGNORECASE)
+TEACHER_MONTH_RE = re.compile(r"1998[-_](\d{2})[-_]2003版[-_]带音\.txt$", re.IGNORECASE)
+PHONETIC_RE = re.compile(r"\{[^{}]*\}")
 UNK = "__UNK_TOKEN__"
 PREFIX = "在阳光明媚的五月，我们学校胜利召开了……"
 
@@ -38,6 +41,14 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def portable_repo_path(value: str) -> str:
+    normalized = value.replace("\\", "/")
+    parts = normalized.split("/")
+    if "tools" in parts:
+        return "/".join(parts[parts.index("tools"):])
+    return Path(value).name
+
+
 def parse_months(value: str) -> list[int]:
     if not value.strip():
         return []
@@ -47,15 +58,15 @@ def parse_months(value: str) -> list[int]:
     return months
 
 
-def read_source(path: Path, encoding: str, months: list[int]) -> tuple[list[tuple[str, str]], dict[str, object]]:
+def read_source(path: Path, encoding: str, months: list[int]) -> tuple[list[tuple[str, int, bytes]], dict[str, object]]:
     archive_digest = sha256(path)
-    source_files: list[tuple[str, str]] = []
+    source_files: list[tuple[str, int, bytes]] = []
     member_metadata: list[dict[str, object]] = []
     if zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as archive:
             candidates = []
             for name in archive.namelist():
-                match = MONTH_FILE_RE.search(name)
+                match = MONTH_FILE_RE.search(name) or TEACHER_MONTH_RE.search(name)
                 if match and (not months or int(match.group(1)) in months):
                     candidates.append((int(match.group(1)), name))
             candidates.sort()
@@ -63,18 +74,47 @@ def read_source(path: Path, encoding: str, months: list[int]) -> tuple[list[tupl
                 raise ValueError(f"ZIP 中没有找到指定月份的 1998 年语料文件: {months}")
             for month, name in candidates:
                 raw = archive.read(name)
-                source_files.append((name, raw.decode(encoding, errors="strict")))
+                source_files.append((name, month, raw))
                 member_metadata.append({
                     "name": name,
                     "month": month,
                     "bytes": len(raw),
                     "sha256": hashlib.sha256(raw).hexdigest(),
                 })
+    elif path.suffix.lower() == ".rar":
+        try:
+            import libarchive
+        except ImportError as exc:
+            raise RuntimeError("读取教师 RAR 语料需要安装 libarchive-c==5.1") from exc
+        candidates = []
+        with libarchive.file_reader(str(path)) as archive:
+            for entry in archive:
+                match = MONTH_FILE_RE.search(entry.pathname) or TEACHER_MONTH_RE.search(entry.pathname)
+                if match and entry.size and (not months or int(match.group(1)) in months):
+                    month = int(match.group(1))
+                    raw = b"".join(entry.get_blocks())
+                    if len(raw) != entry.size:
+                        raise ValueError(f"RAR 成员长度不符: {entry.pathname}")
+                    candidates.append((month, entry.pathname, raw))
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        if not candidates:
+            raise ValueError(f"RAR 中没有找到指定月份的 1998 年语料文件: {months}")
+        for month, name, raw in candidates:
+            source_files.append((name, month, raw))
+            member_metadata.append({
+                "name": name,
+                "month": month,
+                "bytes": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            })
     else:
         raw = path.read_bytes()
-        source_files.append((path.name, raw.decode(encoding, errors="strict")))
+        month_match = MONTH_FILE_RE.search(path.name) or TEACHER_MONTH_RE.search(path.name)
+        month = int(month_match.group(1)) if month_match else 0
+        source_files.append((path.name, month, raw))
         member_metadata.append({
             "name": path.name,
+            "month": month,
             "bytes": len(raw),
             "sha256": hashlib.sha256(raw).hexdigest(),
         })
@@ -100,94 +140,217 @@ def clean_corpus(
         raise ValueError(f"语料大小校验失败: expected={expected_bytes}, actual={source_meta['archive_bytes']}")
     if expected_sha256 and str(source_meta["archive_sha256"]).lower() != expected_sha256.lower():
         raise ValueError("语料 SHA-256 校验失败")
-    sentences: list[list[str]] = []
-    article_ids: list[str] = []
+    article_rows: OrderedDict[str, list[dict[str, object]]] = OrderedDict()
+    record_groups: OrderedDict[str, list[dict[str, object]]] = OrderedDict()
+    invalid_decode_articles: set[str] = set()
+    decode_errors: list[dict[str, object]] = []
+    unindexed_decode_errors: list[dict[str, object]] = []
+    unindexed_lines: list[dict[str, object]] = []
+    seen_dates: set[str] = set()
     stats: dict[str, object] = {
         **source_meta,
         "physical_lines": 0,
         "blank_lines": 0,
+        "decoded_record_rows": 0,
         "records": 0,
+        "articles_before_exclusion": 0,
         "articles": 0,
         "removed_record_ids": 0,
         "surface_tokens": 0,
-        "removed_pos_tags": 0,
-        "removed_chunk_labels": 0,
-        "removed_bracket_markers": 0,
-        "removed_extra_annotation_markers": 0,
+        "removed_phonetic_annotations": 0,
+        "removed_layout_markers": 0,
         "removed_control_characters": 0,
+        "removed_duplicate_record_rows": 0,
+        "removed_duplicate_segments": 0,
+        "removed_duplicate_articles": 0,
+        "removed_empty_records": 0,
         "unique_dates": 0,
         "date_start": "",
         "date_end": "",
-        "untagged_pieces": 0,
-        "untagged_examples": [],
+        "no_id_lines_ignored": 0,
+        "no_id_line_examples": unindexed_lines,
+        "decode_errors": decode_errors,
+        "unindexed_decode_errors": unindexed_decode_errors,
+        "conflicting_record_ids": [],
+        "invalid_decode_article_ids": [],
+        "conflicting_article_ids": [],
+        "excluded_article_ids": [],
     }
     cleaned_path.parent.mkdir(parents=True, exist_ok=True)
-    seen_articles: set[str] = set()
-    seen_dates: set[str] = set()
-    prior_article: str | None = None
+    for source_name, month, raw in source_files:
+        byte_offset = 0
+        for line_no, raw_line_with_ending in enumerate(raw.splitlines(keepends=True), 1):
+            line_offset = byte_offset
+            byte_offset += len(raw_line_with_ending)
+            stats["physical_lines"] = int(stats["physical_lines"]) + 1
+            raw_line = raw_line_with_ending.rstrip(b"\r\n")
+            if not raw_line.strip():
+                stats["blank_lines"] = int(stats["blank_lines"]) + 1
+                continue
+            try:
+                decoded = raw_line.decode(encoding, errors="strict")
+            except UnicodeDecodeError as exc:
+                prefix = raw_line.split(None, 1)[0].decode("ascii", errors="ignore")
+                match = RECORD_RE.fullmatch(prefix)
+                article_id = "-".join(match.groups()[:3]) if match else None
+                error = {
+                    "source": source_name,
+                    "month": month,
+                    "line": line_no,
+                    "line_byte_offset": line_offset,
+                    "byte_offset": line_offset + exc.start,
+                    "record_id": prefix if match else None,
+                    "article_id": article_id,
+                    "reason": exc.reason,
+                    "invalid_bytes_hex": raw_line[exc.start:exc.end].hex(" "),
+                }
+                if article_id:
+                    invalid_decode_articles.add(article_id)
+                    decode_errors.append(error)
+                else:
+                    unindexed_decode_errors.append(error)
+                continue
+
+            if "\ufffd" in decoded:
+                prefix = decoded.split(None, 1)[0]
+                match = RECORD_RE.fullmatch(prefix)
+                article_id = "-".join(match.groups()[:3]) if match else None
+                char_offset = len(decoded[:decoded.index("\ufffd")].encode(encoding, errors="strict"))
+                error = {
+                    "source": source_name,
+                    "month": month,
+                    "line": line_no,
+                    "line_byte_offset": line_offset,
+                    "byte_offset": line_offset + char_offset,
+                    "record_id": prefix if match else None,
+                    "article_id": article_id,
+                    "reason": "literal U+FFFD character",
+                    "invalid_bytes_hex": "",
+                }
+                if article_id:
+                    invalid_decode_articles.add(article_id)
+                    decode_errors.append(error)
+                else:
+                    unindexed_decode_errors.append(error)
+                continue
+
+            stripped = decoded.strip()
+            pieces = stripped.split()
+            match = RECORD_RE.fullmatch(pieces[0]) if pieces else None
+            if not match:
+                stats["no_id_lines_ignored"] = int(stats["no_id_lines_ignored"]) + 1
+                if len(unindexed_lines) < 100:
+                    unindexed_lines.append({
+                        "source": source_name,
+                        "month": month,
+                        "line": line_no,
+                        "byte_offset": line_offset,
+                        "text": stripped[:200],
+                    })
+                continue
+
+            date, edition, article, _segment = match.groups()
+            record_id = pieces[0].split("/", 1)[0]
+            article_id = f"{date}-{edition}-{article}"
+            seen_dates.add(date)
+            stats["decoded_record_rows"] = int(stats["decoded_record_rows"]) + 1
+            stats["removed_record_ids"] = int(stats["removed_record_ids"]) + 1
+            sentence: list[str] = []
+            for piece in pieces[1:]:
+                annotation_matches = PHONETIC_RE.findall(piece)
+                if annotation_matches:
+                    stats["removed_phonetic_annotations"] = int(stats["removed_phonetic_annotations"]) + len(annotation_matches)
+                    piece = PHONETIC_RE.sub("", piece)
+                marker_count = piece.count("〓")
+                if marker_count:
+                    stats["removed_layout_markers"] = int(stats["removed_layout_markers"]) + marker_count
+                    piece = piece.replace("〓", "")
+                controls = sum(unicodedata.category(char) == "Cc" for char in piece)
+                if controls:
+                    stats["removed_control_characters"] = int(stats["removed_control_characters"]) + controls
+                    piece = "".join(char for char in piece if unicodedata.category(char) != "Cc")
+                if piece:
+                    sentence.append(piece)
+            if not sentence:
+                stats["removed_empty_records"] = int(stats["removed_empty_records"]) + 1
+                continue
+            row = {
+                "record_id": record_id,
+                "article_id": article_id,
+                "sentence": sentence,
+                "source": source_name,
+                "line": line_no,
+                "byte_offset": line_offset,
+            }
+            article_rows.setdefault(article_id, []).append(row)
+            record_groups.setdefault(record_id, []).append(row)
+
+    conflict_article_ids: set[str] = set()
+    for record_id, rows in record_groups.items():
+        variants = {tuple(row["sentence"]) for row in rows}
+        article_ids_for_record = sorted({str(row["article_id"]) for row in rows})
+        if len(variants) > 1 or len(article_ids_for_record) > 1:
+            conflict_article_ids.update(article_ids_for_record)
+            stats["conflicting_record_ids"].append({
+                "record_id": record_id,
+                "article_ids": article_ids_for_record,
+                "variants": len(variants),
+                "locations": [{"source": row["source"], "line": row["line"], "byte_offset": row["byte_offset"]} for row in rows],
+            })
+        else:
+            stats["removed_duplicate_record_rows"] = int(stats["removed_duplicate_record_rows"]) + max(0, len(rows) - 1)
+
+    stats["articles_before_exclusion"] = len(article_rows)
+    stats["invalid_decode_article_ids"] = sorted(invalid_decode_articles)
+    stats["conflicting_article_ids"] = sorted(conflict_article_ids)
+    excluded_articles = invalid_decode_articles | conflict_article_ids
+    stats["excluded_article_ids"] = sorted(excluded_articles)
+    unique_articles: OrderedDict[str, list[list[str]]] = OrderedDict()
+    article_signatures: dict[tuple[tuple[str, ...], ...], str] = {}
+    for article_id, rows in article_rows.items():
+        if article_id in excluded_articles:
+            continue
+        seen_records: set[str] = set()
+        seen_segments: set[tuple[str, ...]] = set()
+        kept: list[list[str]] = []
+        for row in rows:
+            record_id = str(row["record_id"])
+            sentence = list(row["sentence"])
+            if record_id in seen_records:
+                continue
+            seen_records.add(record_id)
+            signature = tuple(sentence)
+            if signature in seen_segments:
+                stats["removed_duplicate_segments"] = int(stats["removed_duplicate_segments"]) + 1
+                continue
+            seen_segments.add(signature)
+            kept.append(sentence)
+        if not kept:
+            continue
+        article_signature = tuple(tuple(sentence) for sentence in kept)
+        if article_signature in article_signatures:
+            stats["removed_duplicate_articles"] = int(stats["removed_duplicate_articles"]) + 1
+            continue
+        article_signatures[article_signature] = article_id
+        unique_articles[article_id] = kept
+
+    sentences: list[list[str]] = []
+    article_ids: list[str] = []
     with cleaned_path.open("w", encoding="utf-8", newline="\n") as output:
-        for source_name, text in source_files:
-            for line_no, raw_line in enumerate(text.splitlines(), 1):
-                stats["physical_lines"] = int(stats["physical_lines"]) + 1
-                stripped = raw_line.strip()
-                if not stripped:
-                    stats["blank_lines"] = int(stats["blank_lines"]) + 1
-                    continue
-                pieces = stripped.split()
-                match = RECORD_RE.fullmatch(pieces[0]) if pieces else None
-                if not match:
-                    raise ValueError(f"{source_name}:{line_no} 没有匹配人民日报记录编号: {stripped[:120]}")
-                date, edition, article, _segment, _record_tag = match.groups()
-                seen_dates.add(date)
-                article_id = f"{date}-{edition}-{article}"
-                seen_articles.add(article_id)
-                stats["records"] = int(stats["records"]) + 1
-                stats["removed_record_ids"] = int(stats["removed_record_ids"]) + 1
-                sentence: list[str] = []
-                for piece in pieces[1:]:
-                    token_text = piece
-                    chunk = CHUNK_RE.search(token_text)
-                    if chunk:
-                        token_text = token_text[: chunk.start()]
-                        stats["removed_chunk_labels"] = int(stats["removed_chunk_labels"]) + 1
-                        stats["removed_bracket_markers"] = int(stats["removed_bracket_markers"]) + 1
-                    if token_text.endswith("/%"):
-                        token_text = token_text[:-2]
-                        stats["removed_extra_annotation_markers"] = int(stats["removed_extra_annotation_markers"]) + 1
-                    pos_match = POS_RE.fullmatch(token_text)
-                    if pos_match and TAG_RE.fullmatch(pos_match.group(2)):
-                        token_text = pos_match.group(1)
-                        stats["removed_pos_tags"] = int(stats["removed_pos_tags"]) + 1
-                    else:
-                        stats["untagged_pieces"] = int(stats["untagged_pieces"]) + 1
-                        examples = stats["untagged_examples"]
-                        if len(examples) < 20:
-                            examples.append({"source": source_name, "line": line_no, "piece": piece})
-                    controls = sum(unicodedata.category(char) == "Cc" for char in token_text)
-                    if controls:
-                        stats["removed_control_characters"] = int(stats["removed_control_characters"]) + controls
-                        token_text = "".join(char for char in token_text if unicodedata.category(char) != "Cc")
-                    markers = token_text.count("[") + token_text.count("]")
-                    if markers:
-                        stats["removed_bracket_markers"] = int(stats["removed_bracket_markers"]) + markers
-                        token_text = token_text.replace("[", "").replace("]", "")
-                    if token_text:
-                        sentence.append(token_text)
-                if not sentence:
-                    raise ValueError(f"{source_name}:{line_no} 的编号之后没有词面内容")
+        for article_id, article_sentences in unique_articles.items():
+            if article_ids:
+                output.write("\n")
+            for sentence in article_sentences:
                 sentences.append(sentence)
                 article_ids.append(article_id)
                 stats["surface_tokens"] = int(stats["surface_tokens"]) + len(sentence)
-                if prior_article is not None and prior_article != article_id:
-                    output.write("\n")
                 output.write(" ".join(sentence) + "\n")
-                prior_article = article_id
-    stats["articles"] = len(seen_articles)
+    stats["records"] = len(sentences)
+    stats["articles"] = len(unique_articles)
+    stats["excluded_articles"] = len(excluded_articles)
     stats["unique_dates"] = len(seen_dates)
     stats["date_start"] = min(seen_dates) if seen_dates else ""
     stats["date_end"] = max(seen_dates) if seen_dates else ""
-    if int(stats["untagged_pieces"]):
-        raise ValueError(f"有 {stats['untagged_pieces']} 个词片段没有识别出词性标签，请检查 untagged_examples")
     return sentences, article_ids, stats
 
 
@@ -321,6 +484,18 @@ def read_arpa_counts(path: Path) -> dict[int, int]:
     return counts
 
 
+def restrict_cpu_affinity(max_cpus: int) -> list[int]:
+    if max_cpus < 1:
+        raise ValueError("--max-cpus 必须至少为 1")
+    process = psutil.Process()
+    available = process.cpu_affinity()
+    selected = available[:max_cpus]
+    if not selected:
+        raise RuntimeError("无法确定可用 CPU 亲和性，拒绝在未限核的情况下启动训练")
+    process.cpu_affinity(selected)
+    return process.cpu_affinity()
+
+
 def run(args: argparse.Namespace) -> int:
     source = Path(args.input)
     output = Path(args.output_dir)
@@ -329,6 +504,8 @@ def run(args: argparse.Namespace) -> int:
     log_dir = output / "logs"
     model_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
+    cpu_affinity = restrict_cpu_affinity(args.max_cpus)
+    print(f"[cpu] process affinity restricted to {len(cpu_affinity)} CPUs: {cpu_affinity}", flush=True)
 
     months = parse_months(args.months)
     print("[source] reading and verifying the original corpus", flush=True)
@@ -342,21 +519,34 @@ def run(args: argparse.Namespace) -> int:
     )
     print(
         f"[clean] records={corpus_stats['records']} articles={corpus_stats['articles']} "
-        f"tokens={corpus_stats['surface_tokens']} removed_pos_tags={corpus_stats['removed_pos_tags']} "
-        f"removed_chunk_labels={corpus_stats['removed_chunk_labels']} "
-        f"removed_brackets={corpus_stats['removed_bracket_markers']} "
-        f"removed_extra_markers={corpus_stats['removed_extra_annotation_markers']} "
-        f"removed_controls={corpus_stats['removed_control_characters']}",
+        f"tokens={corpus_stats['surface_tokens']} "
+        f"decode_errors={len(corpus_stats['decode_errors'])} "
+        f"excluded_articles={corpus_stats['excluded_articles']} "
+        f"conflicting_record_ids={len(corpus_stats['conflicting_record_ids'])} "
+        f"phonetics_removed={corpus_stats['removed_phonetic_annotations']} "
+        f"layout_markers_removed={corpus_stats['removed_layout_markers']} "
+        f"duplicate_segments_removed={corpus_stats['removed_duplicate_segments']} "
+        f"duplicate_articles_removed={corpus_stats['removed_duplicate_articles']}",
         flush=True,
     )
     train_indices, test_indices, split_meta = split_by_article(cleaned, article_ids, args.train_ratio, args.split_seed)
     train_raw = [cleaned[i] for i in train_indices]
     test_raw = [cleaned[i] for i in test_indices]
+    train_article_ids = set(split_meta["train_article_ids"])
+    article_record_counts = Counter(article_ids)
+    article_index_path = data_dir / "corpus_articles.csv"
+    with article_index_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["article_id", "record_count", "split"])
+        for article_id, record_count in article_record_counts.items():
+            writer.writerow([article_id, record_count, "train" if article_id in train_article_ids else "test"])
     train_frequency = Counter(token for sentence in train_raw for token in sentence)
     keep_words = {token for token, count in train_frequency.items() if count >= args.min_count}
     keep_words.add(UNK)
     train_path = data_dir / "train_for_lmplz.txt"
     test_path = data_dir / "test_for_scoring.txt"
+    vocabulary_path = data_dir / "train_vocabulary.txt"
+    vocabulary_path.write_text("\n".join(sorted(keep_words)) + "\n", encoding="utf-8")
     train_token_count, rare_train_tokens = write_modeling_text(train_path, train_raw, keep_words)
     test_token_count, test_oov_tokens = write_modeling_text(test_path, test_raw, keep_words)
     print(
@@ -366,6 +556,42 @@ def run(args: argparse.Namespace) -> int:
         f"train_rare_mapped={rare_train_tokens} test_oov_mapped={test_oov_tokens}",
         flush=True,
     )
+
+    source_record = {
+        "input_file": source.name,
+        "repository_url": args.source_url,
+        "source_note": args.source_note,
+        "archive_bytes": corpus_stats["archive_bytes"],
+        "archive_sha256": corpus_stats["archive_sha256"],
+        "selected_months": months,
+        "encoding": args.encoding,
+        "files": corpus_stats["source_files"],
+    }
+    preflight = {
+        "source": source_record,
+        "corpus_stats": corpus_stats,
+        "split": split_meta,
+        "training_records": len(train_raw),
+        "test_records": len(test_raw),
+        "training_tokens": train_token_count,
+        "test_tokens": test_token_count,
+        "training_rare_token_count_mapped_to_unk": rare_train_tokens,
+        "test_oov_token_count_mapped_to_unk": test_oov_tokens,
+        "test_oov_rate": test_oov_tokens / test_token_count if test_token_count else 0,
+        "min_train_frequency": args.min_count,
+        "kept_vocabulary_size": len(keep_words),
+        "vocabulary_file": vocabulary_path.name,
+        "article_index_file": article_index_path.name,
+        "model_orders": args.orders,
+        "pruned_fivegram": args.pruned_fivegram,
+        "max_cpus": args.max_cpus,
+        "cpu_affinity": cpu_affinity,
+    }
+    if args.preflight_only:
+        preflight_path = output / "corpus_preflight.json"
+        preflight_path.write_text(json.dumps(preflight, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"[preflight-only] no KenLM training started; wrote {preflight_path}", flush=True)
+        return 0
 
     dll_dir = Path(args.dll_dir) if args.dll_dir else None
     if dll_dir and dll_dir.exists():
@@ -431,6 +657,7 @@ def run(args: argparse.Namespace) -> int:
             "discount_fallback": fallback,
             "training_seconds": round(elapsed, 6),
             "arpa_bytes": arpa_path.stat().st_size,
+            "arpa_sha256": sha256(arpa_path),
             "arpa_ngram_counts": ", ".join(f"{n}g={count}" for n, count in read_arpa_counts(arpa_path).items()),
             "test_perplexity": round(ppl, 8),
             "test_prediction_events_including_eos": predicted,
@@ -454,15 +681,7 @@ def run(args: argparse.Namespace) -> int:
         writer.writeheader()
         writer.writerows(results)
     metadata = {
-        "source": {
-            "input_path": str(source),
-            "repository_url": args.source_url,
-            "source_note": args.source_note,
-            "archive_bytes": corpus_stats["archive_bytes"],
-            "archive_sha256": corpus_stats["archive_sha256"],
-            "selected_months": months,
-            "files": corpus_stats["source_files"],
-        },
+        "source": source_record,
         "corpus_stats": corpus_stats,
         "split": split_meta,
         "training_records": len(train_raw),
@@ -476,10 +695,12 @@ def run(args: argparse.Namespace) -> int:
         "rare_train_tokens_mapped_to": UNK,
         "test_oov_tokens_mapped_to": UNK,
         "kept_vocabulary_size": len(keep_words),
-        "kenlm_tool": str(exe),
-        "kenlm_python_binding": str(Path(args.kenlm_python_dir)),
+        "kenlm_tool": portable_repo_path(args.lmplz),
+        "kenlm_python_binding": portable_repo_path(args.kenlm_python_dir),
         "estimator": "KenLM lmplz, modified Kneser-Ney",
         "memory_limit": args.memory,
+        "max_cpus": args.max_cpus,
+        "cpu_affinity": cpu_affinity,
         "orders": args.orders,
         "pruned_fivegram": args.pruned_fivegram,
         "prefix": args.prefix,
@@ -494,15 +715,15 @@ def run(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Clean the People’s Daily corpus and run KenLM n-gram experiments")
-    parser.add_argument("--input", default="data/人民日报1998_PFR.zip")
-    parser.add_argument("--output-dir", default="results_1-4")
+    parser.add_argument("--input", default="data/teacher_1998_jan_jun.rar")
+    parser.add_argument("--output-dir", default="results_1-6")
     parser.add_argument("--lmplz", default="tools/kenlm-build/bin/lmplz.exe")
     parser.add_argument("--kenlm-python-dir", default="tools/kenlm-build/lib")
     parser.add_argument("--dll-dir", default="")
     parser.add_argument("--temp-prefix", default="tools/tmp")
     parser.add_argument("--orders", type=lambda v: [int(x) for x in v.split(",")], default=[2, 3, 4, 5, 6])
-    parser.add_argument("--encoding", default="utf-8-sig")
-    parser.add_argument("--months", default="1,2,3,4", help="comma-separated month numbers to read from a 1998 corpus ZIP")
+    parser.add_argument("--encoding", default="gb18030")
+    parser.add_argument("--months", default="1,2,3,4,5,6", help="comma-separated month numbers to read from a 1998 corpus archive")
     parser.add_argument("--expected-bytes", type=int)
     parser.add_argument("--expected-sha256", default="")
     parser.add_argument("--source-url", default="")
@@ -517,6 +738,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tokens", type=int, default=24)
     parser.add_argument("--min-tokens", type=int, default=6)
     parser.add_argument("--generation-seed", type=int, default=314159)
+    parser.add_argument("--max-cpus", type=int, default=4, help="restrict this process and child training process affinity")
+    parser.add_argument("--preflight-only", action="store_true", help="clean, audit, split, and write token data without training KenLM")
     parser.add_argument("--pruned-fivegram", action="store_true")
     return parser
 

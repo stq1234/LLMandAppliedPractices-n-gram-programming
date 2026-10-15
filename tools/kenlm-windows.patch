@@ -1,0 +1,28 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,4 +1,4 @@
+-cmake_minimum_required(VERSION 3.28)
++cmake_minimum_required(VERSION 3.14)
+ 
+ # Define a single cmake project
+ project(kenlm)
+--- a/lm/builder/lmplz_main.cc
++++ b/lm/builder/lmplz_main.cc
+@@ -76,7 +76,6 @@
+ 
+     CLI::App app{"Language model building options"};
+ 
+-    app.add_flag("-h,--help", help, "Show this help message");
+     app.add_option("-o,--order", pipeline.order, "Order of the model")->required();
+     app.add_option("--interpolate_unigrams", pipeline.initial_probs.interpolate_unigrams,
+       "Interpolate the unigrams (default) as opposed to giving lots of mass to <unk> like SRI.  If you want SRI's behavior with a large <unk> and the old lmplz default, use --interpolate_unigrams 0.")
+--- a/python/CMakeLists.txt
++++ b/python/CMakeLists.txt
+@@ -5,6 +5,7 @@
+ add_library(kenlm_python MODULE kenlm.cpp score_sentence.cc)
+ set_target_properties(kenlm_python PROPERTIES OUTPUT_NAME kenlm)
+ set_target_properties(kenlm_python PROPERTIES PREFIX "")
++set_target_properties(kenlm_python PROPERTIES IMPORT_SUFFIX "_python")
+ 
+ if(APPLE)
+   set_target_properties(kenlm_python PROPERTIES SUFFIX ".so")

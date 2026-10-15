@@ -1,0 +1,58 @@
+{
+  "source_archive_sha256": "30c4435bcce7d082c2175720a4549114f80656761df95d3c8b20f0ee48e5d7ab",
+  "cleaned_records": 123386,
+  "cleaned_articles": 18581,
+  "train_articles": 14802,
+  "test_articles": 3779,
+  "train_article_test_article_overlap": 0,
+  "training_only_vocabulary_size_including_unk": 69864,
+  "test_oov_tokens_mapped_to_unk": 29585,
+  "decode_error_rows": 5,
+  "invalid_decode_articles_excluded": 3,
+  "conflicting_articles_excluded": 1,
+  "no_id_lines_ignored": 0,
+  "rescore_model_results": [
+    {
+      "model": "2gram",
+      "ppl": 342.25281634,
+      "prediction_events_including_eos": 1520960,
+      "arpa_bytes": 38853156,
+      "arpa_sha256": "a2ab2f4cb16c7ff2a3b2927465be4565f3859dbc2ad2f8b686049611c9d45466"
+    },
+    {
+      "model": "3gram",
+      "ppl": 234.45597553,
+      "prediction_events_including_eos": 1520960,
+      "arpa_bytes": 168569129,
+      "arpa_sha256": "b6ab8a004bf45d35c4afba71c750a248fead71c1dfb8ebb1c3aa9adff9961f60"
+    },
+    {
+      "model": "4gram",
+      "ppl": 220.1131305,
+      "prediction_events_including_eos": 1520960,
+      "arpa_bytes": 387495386,
+      "arpa_sha256": "8df3e7ccd1d2ef601b487d329f0bc0d6ead2c295ac363d399f28561acc6814fb"
+    },
+    {
+      "model": "5gram",
+      "ppl": 217.39763028,
+      "prediction_events_including_eos": 1520960,
+      "arpa_bytes": 667797383,
+      "arpa_sha256": "9c275fa14c2d23a38d6d7a39fba5fa76cefeb079592281fbebd60882d01808f7"
+    },
+    {
+      "model": "6gram",
+      "ppl": 216.96751134,
+      "prediction_events_including_eos": 1520960,
+      "arpa_bytes": 986759033,
+      "arpa_sha256": "df5530edd20012ac47b2c28e45a17190c443131b6fa764bd8569b9400f66c195"
+    },
+    {
+      "model": "5gram_pruned",
+      "ppl": 222.55347649,
+      "prediction_events_including_eos": 1520960,
+      "arpa_bytes": 201917414,
+      "arpa_sha256": "8d801ef1e791074565bf11b281e51476696f2d1b822ea8c545a220bbafbcffe0"
+    }
+  ]
+}

@@ -20,9 +20,9 @@ GRAY = "#C9D2D8"
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results", type=Path, default=Path("results_1-4/experiment_results.csv"))
-    parser.add_argument("--metadata", type=Path, default=Path("results_1-4/experiment_metadata.json"))
-    parser.add_argument("--output-dir", type=Path, default=Path("results_1-4"))
+    parser.add_argument("--results", type=Path, default=Path("results_1-6/experiment_results.csv"))
+    parser.add_argument("--metadata", type=Path, default=Path("results_1-6/experiment_metadata.json"))
+    parser.add_argument("--output-dir", type=Path, default=Path("results_1-6"))
     args = parser.parse_args()
 
     with args.results.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -71,13 +71,22 @@ def main() -> int:
                  edgecolor="white", linewidth=0.8, zorder=4, label="5-gram pruned")
     axis.annotate(f"{prune_ppl:.2f}", (5, prune_ppl), xytext=(12, 5),
                   textcoords="offset points", fontsize=9, color="#8A4B00")
-    axis.annotate("5→6 gram: −0.17%", xy=(6, perplexities[-1]), xytext=(4.2, 260),
-                  arrowprops={"arrowstyle": "->", "color": "#53636B", "lw": 1},
-                  fontsize=9, color="#36454F")
+    adjacent_delta = (perplexities[-2] - perplexities[-1]) / perplexities[-2] * 100
+    adjacent_change = "lower" if adjacent_delta >= 0 else "higher"
+    annotation_y = max(perplexities + [prune_ppl]) * 1.04
+    axis.annotate(
+        f"{orders[-2]}→{orders[-1]}-gram: {abs(adjacent_delta):.2f}% {adjacent_change} PPL",
+        xy=(orders[-1], perplexities[-1]),
+        xytext=(orders[-2] + 0.15, annotation_y),
+        arrowprops={"arrowstyle": "->", "color": "#53636B", "lw": 1},
+        fontsize=9,
+        color="#36454F",
+    )
     axis.set_title("Held-out perplexity by n-gram order", pad=12)
     axis.set_xlabel("n-gram order")
     axis.set_ylabel("Perplexity (lower is better)")
-    axis.set_ylim(bottom=210)
+    plotted_ppl = perplexities + [prune_ppl]
+    axis.set_ylim(bottom=min(plotted_ppl) * 0.92, top=max(plotted_ppl) * 1.12)
     axis.set_xticks(orders)
     axis.grid(axis="y", alpha=0.22)
     axis.legend(frameon=False, loc="upper right")
