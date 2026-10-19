@@ -7,7 +7,11 @@
 - `run_rmrb_experiment.py`：严格逐行解码、清理带音记录、审计异常、文章级去重和切分、构造训练词表、训练和评测 n-gram 模型。
 - `run_rmrb_experiment_1to6.ps1`：Windows PowerShell 入口；支持先运行 `-PreflightOnly` 做统计检查，也可执行完整训练、生成图表和复核指标。
 - `validate_ngram_results.py`：检查清洗文本、文章划分、训练词表和切分文件，并可重新加载 ARPA 模型复算 PPL。
+- `analyze_ngram_diagnostics.py`：不重训模型，按文章索引复核既有数据切分；用 KenLM `full_scores` 导出 5-gram、6-gram、剪枝 5-gram 的实际匹配阶数，并从原始训练 token 统计词频和不同左邻。
+- `run_ngram_diagnostics.ps1`：为 Windows 中文路径临时建立 ASCII 盘符映射，然后运行上述诊断脚本；仅需读取现成模型和数据。
 - `plot_ngram_results.py`：从 CSV 和元数据生成三张结果图。
+- `results_1-6/diagnostics/`：匹配阶数事件数、全量训练 token 词频与左邻计数、样例 token 的左邻清单及带来源哈希的 JSON 汇总。
+- `results_1-6/longest_match_distribution.png`：固定测试集上 KenLM 返回匹配阶数的比例图。
 - `results_1-6/experiment_results.csv`、`experiment_metadata.json`、`validation.json`：实际结果、完整数据清理/切分审计信息、复核结果。
 - `results_1-6/data/`：清洗后词面语料、文章级 split 索引、训练词表及 KenLM/评分输入文本。
 - `作业3实验报告.md`：本次实验报告。
@@ -45,6 +49,14 @@ python -m pip install -r requirements.txt
 ```powershell
 python .\plot_ngram_results.py
 ```
+
+已完成训练后如需重建匹配阶数和词频/左邻诊断，可在仓库根目录运行：
+
+```powershell
+.\run_ngram_diagnostics.ps1
+```
+
+脚本会核对清洗文本、文章索引、保存的训练/测试输入及原有模型 SHA-256，不会重新训练。KenLM Python API 返回的匹配长度包括当前预测 token；事件统计以每条测试记录的 token 加一个 EOS 为分母，BOS 只作上下文。原始测试 OOV 的词面数与映射后的 KenLM 运行时 OOV 标志分别报告。训练词频和左邻计数基于低频词映射前的清洗训练文本；其中不同左邻数只是类型计数，不等同熵或最终 Modified Kneser–Ney 概率。
 
 如需独立重查数据与模型结果：
 

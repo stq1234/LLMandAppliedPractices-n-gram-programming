@@ -1,0 +1,303 @@
+{
+  "source": {
+    "experiment_metadata_sha256": "ec3c1376f9e1112ccc3a8e219cf065ec9b29b3853254bc481b5f3b42417c0bfe",
+    "test_file_sha256": "c5882fec6793e6326307570210fe4a5859d138433da8c28ae4b6eb25679829fa",
+    "cleaned_training_corpus_sha256": "0e6ec956defb693ea85b70505082dcc8c8e7def700dbffd89fe7f454f48fd7eb",
+    "article_split_index_sha256": "e2262de558d6975619252d43f786147064046413e7c53f6294868088fb9e01a0"
+  },
+  "match_length_definition": "KenLM Model.full_scores(..., bos=True, eos=True) returned matched n-gram length; this length counts the predicted token and is not a measure of the model's entire effective dependency. EOS is a predicted event; BOS is context only.",
+  "test_event_denominator": {
+    "records": 24664,
+    "lexical_token_events": 1496296,
+    "eos_events": 24664,
+    "all_prediction_events_including_eos": 1520960,
+    "oov_surface_tokens_mapped_to_unk": 29585,
+    "note": "One event is scored for every mapped test token and one EOS per non-empty record; there is no BOS prediction event."
+  },
+  "training_frequency_and_left_contexts": {
+    "record_counts": {
+      "train": 98722,
+      "test": 24664
+    },
+    "token_counts": {
+      "train": 5797582,
+      "test": 1496296
+    },
+    "article_counts": {
+      "train": 14802,
+      "test": 3779
+    },
+    "raw_training_token_types": 124004,
+    "training_surface_tokens": 5797582,
+    "distinct_token_left_context_pairs_including_record_bos": 1549382,
+    "candidate_rule": "examples use whitespace tokens consisting only of Unicode alphabetic characters; punctuation and tokens containing digits are excluded from the sample, but all tokens remain in frequency and left-context totals",
+    "left_context_rule": "count distinct immediately preceding tokens within each training record; count <s> once as the preceding context for a record-initial token; never cross record boundaries",
+    "example_minimum_frequency": 100
+  },
+  "selected_word_examples": [
+    {
+      "selection_group": "高频/每左邻",
+      "word": "镕基",
+      "training_frequency": 651,
+      "distinct_left_contexts": 1,
+      "frequency_per_left_context": 651.0
+    },
+    {
+      "selection_group": "高频/每左邻",
+      "word": "岚清",
+      "training_frequency": 642,
+      "distinct_left_contexts": 1,
+      "frequency_per_left_context": 642.0
+    },
+    {
+      "selection_group": "高频/每左邻",
+      "word": "锦涛",
+      "training_frequency": 585,
+      "distinct_left_contexts": 1,
+      "frequency_per_left_context": 585.0
+    },
+    {
+      "selection_group": "高频/每左邻",
+      "word": "瑞环",
+      "training_frequency": 570,
+      "distinct_left_contexts": 1,
+      "frequency_per_left_context": 570.0
+    },
+    {
+      "selection_group": "高频/每左邻",
+      "word": "其琛",
+      "training_frequency": 468,
+      "distinct_left_contexts": 1,
+      "frequency_per_left_context": 468.0
+    },
+    {
+      "selection_group": "左邻类型较多",
+      "word": "的",
+      "training_frequency": 284210,
+      "distinct_left_contexts": 28415,
+      "frequency_per_left_context": 10.0021
+    },
+    {
+      "selection_group": "左邻类型较多",
+      "word": "和",
+      "training_frequency": 57971,
+      "distinct_left_contexts": 11560,
+      "frequency_per_left_context": 5.0148
+    },
+    {
+      "selection_group": "左邻类型较多",
+      "word": "在",
+      "training_frequency": 62259,
+      "distinct_left_contexts": 7275,
+      "frequency_per_left_context": 8.5579
+    },
+    {
+      "selection_group": "左邻类型较多",
+      "word": "等",
+      "training_frequency": 13838,
+      "distinct_left_contexts": 6124,
+      "frequency_per_left_context": 2.2596
+    },
+    {
+      "selection_group": "左邻类型较多",
+      "word": "是",
+      "training_frequency": 54845,
+      "distinct_left_contexts": 5558,
+      "frequency_per_left_context": 9.8678
+    }
+  ],
+  "models": [
+    {
+      "model": "5gram",
+      "maximum_order": 5,
+      "test_records": 24664,
+      "lexical_token_events": 1496296,
+      "eos_events": 24664,
+      "all_prediction_events_including_eos": 1520960,
+      "test_oov_tokens_mapped_to_unk": 29585,
+      "kenlm_runtime_oov_flags": 0,
+      "saved_perplexity": 217.39763028,
+      "full_scores_recomputed_perplexity": 217.39762877,
+      "full_scores_absolute_ppl_difference": 1.5115e-06,
+      "arpa_sha256": "9c275fa14c2d23a38d6d7a39fba5fa76cefeb079592281fbebd60882d01808f7",
+      "match_length_distribution": [
+        {
+          "match_length_including_target": 1,
+          "lexical_token_events": 260578,
+          "eos_events": 1080,
+          "all_prediction_events": 261658,
+          "percent_of_all_events": 17.203477,
+          "percent_of_lexical_events": 17.41487,
+          "percent_of_eos_events": 4.378852
+        },
+        {
+          "match_length_including_target": 2,
+          "lexical_token_events": 591866,
+          "eos_events": 4287,
+          "all_prediction_events": 596153,
+          "percent_of_all_events": 39.195837,
+          "percent_of_lexical_events": 39.555409,
+          "percent_of_eos_events": 17.381609
+        },
+        {
+          "match_length_including_target": 3,
+          "lexical_token_events": 374591,
+          "eos_events": 7643,
+          "all_prediction_events": 382234,
+          "percent_of_all_events": 25.131101,
+          "percent_of_lexical_events": 25.034552,
+          "percent_of_eos_events": 30.988485
+        },
+        {
+          "match_length_including_target": 4,
+          "lexical_token_events": 142902,
+          "eos_events": 5712,
+          "all_prediction_events": 148614,
+          "percent_of_all_events": 9.771066,
+          "percent_of_lexical_events": 9.550383,
+          "percent_of_eos_events": 23.15926
+        },
+        {
+          "match_length_including_target": 5,
+          "lexical_token_events": 126359,
+          "eos_events": 5942,
+          "all_prediction_events": 132301,
+          "percent_of_all_events": 8.698519,
+          "percent_of_lexical_events": 8.444786,
+          "percent_of_eos_events": 24.091794
+        }
+      ]
+    },
+    {
+      "model": "6gram",
+      "maximum_order": 6,
+      "test_records": 24664,
+      "lexical_token_events": 1496296,
+      "eos_events": 24664,
+      "all_prediction_events_including_eos": 1520960,
+      "test_oov_tokens_mapped_to_unk": 29585,
+      "kenlm_runtime_oov_flags": 0,
+      "saved_perplexity": 216.96751134,
+      "full_scores_recomputed_perplexity": 216.96751091,
+      "full_scores_absolute_ppl_difference": 4.333e-07,
+      "arpa_sha256": "df5530edd20012ac47b2c28e45a17190c443131b6fa764bd8569b9400f66c195",
+      "match_length_distribution": [
+        {
+          "match_length_including_target": 1,
+          "lexical_token_events": 260578,
+          "eos_events": 1080,
+          "all_prediction_events": 261658,
+          "percent_of_all_events": 17.203477,
+          "percent_of_lexical_events": 17.41487,
+          "percent_of_eos_events": 4.378852
+        },
+        {
+          "match_length_including_target": 2,
+          "lexical_token_events": 591866,
+          "eos_events": 4287,
+          "all_prediction_events": 596153,
+          "percent_of_all_events": 39.195837,
+          "percent_of_lexical_events": 39.555409,
+          "percent_of_eos_events": 17.381609
+        },
+        {
+          "match_length_including_target": 3,
+          "lexical_token_events": 374591,
+          "eos_events": 7643,
+          "all_prediction_events": 382234,
+          "percent_of_all_events": 25.131101,
+          "percent_of_lexical_events": 25.034552,
+          "percent_of_eos_events": 30.988485
+        },
+        {
+          "match_length_including_target": 4,
+          "lexical_token_events": 142902,
+          "eos_events": 5712,
+          "all_prediction_events": 148614,
+          "percent_of_all_events": 9.771066,
+          "percent_of_lexical_events": 9.550383,
+          "percent_of_eos_events": 23.15926
+        },
+        {
+          "match_length_including_target": 5,
+          "lexical_token_events": 54266,
+          "eos_events": 2554,
+          "all_prediction_events": 56820,
+          "percent_of_all_events": 3.735798,
+          "percent_of_lexical_events": 3.626689,
+          "percent_of_eos_events": 10.355174
+        },
+        {
+          "match_length_including_target": 6,
+          "lexical_token_events": 72093,
+          "eos_events": 3388,
+          "all_prediction_events": 75481,
+          "percent_of_all_events": 4.962721,
+          "percent_of_lexical_events": 4.818097,
+          "percent_of_eos_events": 13.73662
+        }
+      ]
+    },
+    {
+      "model": "5gram_pruned",
+      "maximum_order": 5,
+      "test_records": 24664,
+      "lexical_token_events": 1496296,
+      "eos_events": 24664,
+      "all_prediction_events_including_eos": 1520960,
+      "test_oov_tokens_mapped_to_unk": 29585,
+      "kenlm_runtime_oov_flags": 0,
+      "saved_perplexity": 222.55347649,
+      "full_scores_recomputed_perplexity": 222.55347635,
+      "full_scores_absolute_ppl_difference": 1.406e-07,
+      "arpa_sha256": "8d801ef1e791074565bf11b281e51476696f2d1b822ea8c545a220bbafbcffe0",
+      "match_length_distribution": [
+        {
+          "match_length_including_target": 1,
+          "lexical_token_events": 260578,
+          "eos_events": 1080,
+          "all_prediction_events": 261658,
+          "percent_of_all_events": 17.203477,
+          "percent_of_lexical_events": 17.41487,
+          "percent_of_eos_events": 4.378852
+        },
+        {
+          "match_length_including_target": 2,
+          "lexical_token_events": 591866,
+          "eos_events": 4287,
+          "all_prediction_events": 596153,
+          "percent_of_all_events": 39.195837,
+          "percent_of_lexical_events": 39.555409,
+          "percent_of_eos_events": 17.381609
+        },
+        {
+          "match_length_including_target": 3,
+          "lexical_token_events": 470038,
+          "eos_events": 10015,
+          "all_prediction_events": 480053,
+          "percent_of_all_events": 31.5625,
+          "percent_of_lexical_events": 31.413437,
+          "percent_of_eos_events": 40.605741
+        },
+        {
+          "match_length_including_target": 4,
+          "lexical_token_events": 102360,
+          "eos_events": 4994,
+          "all_prediction_events": 107354,
+          "percent_of_all_events": 7.058305,
+          "percent_of_lexical_events": 6.840892,
+          "percent_of_eos_events": 20.248135
+        },
+        {
+          "match_length_including_target": 5,
+          "lexical_token_events": 71454,
+          "eos_events": 4288,
+          "all_prediction_events": 75742,
+          "percent_of_all_events": 4.979881,
+          "percent_of_lexical_events": 4.775392,
+          "percent_of_eos_events": 17.385663
+        }
+      ]
+    }
+  ]
+}
