@@ -73,16 +73,16 @@ def main() -> int:
                   textcoords="offset points", fontsize=9, color="#8A4B00")
     adjacent_delta = (perplexities[-2] - perplexities[-1]) / perplexities[-2] * 100
     adjacent_change = "lower" if adjacent_delta >= 0 else "higher"
-    annotation_y = max(perplexities + [prune_ppl]) * 1.04
-    axis.annotate(
+    axis.text(
+        0.02, 0.98,
         f"{orders[-2]}→{orders[-1]}-gram: {abs(adjacent_delta):.2f}% {adjacent_change} PPL",
-        xy=(orders[-1], perplexities[-1]),
-        xytext=(orders[-2] + 0.15, annotation_y),
-        arrowprops={"arrowstyle": "->", "color": "#53636B", "lw": 1},
+        transform=axis.transAxes,
+        ha="left",
+        va="top",
         fontsize=9,
         color="#36454F",
     )
-    axis.set_title("Held-out perplexity by n-gram order", pad=12)
+    axis.set_title("Held-out test perplexity by n-gram order", pad=12)
     axis.set_xlabel("n-gram order")
     axis.set_ylabel("Perplexity (lower is better)")
     plotted_ppl = perplexities + [prune_ppl]
@@ -115,41 +115,50 @@ def main() -> int:
     figure.savefig(args.output_dir / "resource_comparison_bars.png", dpi=220, bbox_inches="tight")
     plt.close(figure)
 
-    # Pie charts: actual surface-token split and held-out vocabulary coverage.
+    # Horizontal stacked bars show the corpus split and held-out coverage.
     training_tokens = int(metadata["training_tokens"])
     test_tokens = int(metadata["test_tokens"])
     test_oov = int(rows[0]["test_oov_mapped_tokens"])
     if test_oov > test_tokens:
         raise ValueError("Test OOV token count exceeds the test token total")
-    figure, (split_axis, coverage_axis) = plt.subplots(1, 2, figsize=(11.2, 5.1), constrained_layout=True)
-    split_axis.pie(
-        [training_tokens, test_tokens],
-        labels=["Train", "Test"],
-        autopct="%1.1f%%",
-        startangle=90,
-        colors=[BLUE, ORANGE],
-        explode=(0, 0.035),
-        textprops={"fontsize": 10},
-        wedgeprops={"edgecolor": "white", "linewidth": 1.3},
-    )
-    split_axis.set_title(f"Surface-token split\n{training_tokens:,} train · {test_tokens:,} test", fontweight="bold")
-    coverage_axis.pie(
-        [test_tokens - test_oov, test_oov],
-        labels=["In vocabulary", "OOV → UNK"],
-        autopct="%1.2f%%",
-        startangle=90,
-        colors=[GREEN, GRAY],
-        explode=(0, 0.06),
-        pctdistance=0.72,
-        textprops={"fontsize": 9},
-        wedgeprops={"edgecolor": "white", "linewidth": 1.3},
-    )
-    coverage_axis.set_title(f"Held-out vocabulary coverage\n{test_tokens:,} surface tokens", fontweight="bold")
-    figure.suptitle("Corpus and evaluation token distribution", fontweight="bold", fontsize=13)
-    figure.savefig(args.output_dir / "token_distribution_pies.png", dpi=220, bbox_inches="tight")
+    train_percent = 100 * training_tokens / (training_tokens + test_tokens)
+    test_percent = 100 - train_percent
+    oov_percent = 100 * test_oov / test_tokens
+    covered_percent = 100 - oov_percent
+    figure, (split_axis, coverage_axis) = plt.subplots(1, 2, figsize=(11.5, 3.8), constrained_layout=True)
+    split_axis.barh(0, train_percent, color=BLUE, height=0.52)
+    split_axis.barh(0, test_percent, left=train_percent, color=ORANGE, height=0.52)
+    split_axis.text(train_percent / 2, 0, f"Train  {training_tokens:,}\n{train_percent:.1f}%",
+                    color="white", ha="center", va="center", fontweight="bold", fontsize=10)
+    split_axis.text(train_percent + test_percent / 2, 0, f"Test  {test_tokens:,}\n{test_percent:.1f}%",
+                    color="white", ha="center", va="center", fontweight="bold", fontsize=9)
+    split_axis.set_title("Article-level train / test split", fontweight="bold")
+    split_axis.set_xlabel("Share of surface-token events (%)")
+    split_axis.set_yticks([])
+    split_axis.set_xlim(0, 100)
+    split_axis.set_xticks([0, 25, 50, 75, 100])
+    split_axis.grid(axis="x", alpha=0.22)
+    split_axis.set_axisbelow(True)
+
+    coverage_axis.barh(0, covered_percent, color=GREEN, height=0.52)
+    coverage_axis.barh(0, oov_percent, left=covered_percent, color=GRAY, height=0.52)
+    coverage_axis.text(covered_percent / 2, 0, f"In vocabulary  {test_tokens - test_oov:,}\n{covered_percent:.2f}%",
+                       color="white", ha="center", va="center", fontweight="bold", fontsize=10)
+    coverage_axis.annotate(f"OOV → UNK  {test_oov:,} ({oov_percent:.2f}%)",
+                           xy=(covered_percent + oov_percent / 2, 0), xytext=(85, 0.42), ha="center", va="bottom", fontsize=9,
+                           arrowprops={"arrowstyle": "-", "color": "#53636B", "lw": 0.9})
+    coverage_axis.set_title("Held-out vocabulary coverage", fontweight="bold")
+    coverage_axis.set_xlabel("Share of test-token events (%)")
+    coverage_axis.set_yticks([])
+    coverage_axis.set_xlim(0, 106)
+    coverage_axis.set_xticks([0, 25, 50, 75, 100])
+    coverage_axis.grid(axis="x", alpha=0.22)
+    coverage_axis.set_axisbelow(True)
+    figure.suptitle("Corpus split and test vocabulary coverage", fontweight="bold", fontsize=13)
+    figure.savefig(args.output_dir / "corpus_token_coverage.png", dpi=220, bbox_inches="tight")
     plt.close(figure)
 
-    for name in ("perplexity_by_order.png", "resource_comparison_bars.png", "token_distribution_pies.png"):
+    for name in ("perplexity_by_order.png", "resource_comparison_bars.png", "corpus_token_coverage.png"):
         output = args.output_dir / name
         if not output.is_file() or output.stat().st_size == 0:
             raise RuntimeError(f"Chart was not written: {output}")
